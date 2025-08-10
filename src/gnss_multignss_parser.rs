@@ -573,7 +573,7 @@ impl GnssData {
         // Calculate fused accuracy dynamically based only on systems with satellites and position data
         let mut active_systems = Vec::new();
 
-        for (_system_name, system_data) in &self.systems {
+        for system_data in self.systems.values() {
             // Check if system has satellites and position data
             if !system_data.satellites_info.is_empty() &&
                system_data.latitude.is_some() &&
