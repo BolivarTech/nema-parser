@@ -1,6 +1,6 @@
 [package]
 name = "nema-parser"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["Julian Bolivar"]
 description = "A parser for NEMA sentences"
