@@ -164,7 +164,7 @@ impl GnssData {
 
         // Update coordinates and altitude for all systems that have satellites
         for (_, system_data) in self.systems.iter_mut() {
-            if system_data.satellites_info.len() > 0 {
+            if !system_data.satellites_info.is_empty() {
                 system_data.latitude = lat;
                 system_data.longitude = lon;
                 system_data.altitude = altitude;
@@ -189,7 +189,7 @@ impl GnssData {
 
         // Update coordinates for all systems that have satellites
         for (_, system_data) in self.systems.iter_mut() {
-            if system_data.satellites_info.len() > 0 {
+            if !system_data.satellites_info.is_empty() {
                 system_data.latitude = lat;
                 system_data.longitude = lon;
             } else {
@@ -218,18 +218,17 @@ impl GnssData {
         for i in 15..parts.len() {
             if let Some(part) = parts.get(i) {
                 let clean_part = part.split('*').next().unwrap_or(part);
-                if !clean_part.is_empty() {
-                    if let Ok(value) = clean_part.parse::<f64>() {
+                if !clean_part.is_empty()
+                    && let Ok(value) = clean_part.parse::<f64>() {
                         dop_values.push(value);
                         if dop_values.len() == 3 {
                             break;
                         }
                     }
-                }
             }
         }
 
-        let pdop = dop_values.get(0).copied();
+        let pdop = dop_values.first().copied();
         let hdop = dop_values.get(1).copied();
         let vdop = dop_values.get(2).copied();
 
@@ -304,7 +303,7 @@ impl GnssData {
         self.latitude = lat;
         self.longitude = lon;
         if let Some(sys) = self.systems.get_mut(system) {
-            if sys.satellites_info.len() > 0 {
+            if !sys.satellites_info.is_empty() {
                 sys.latitude = lat;
                 sys.longitude = lon;
             } else {
@@ -362,14 +361,13 @@ impl GnssData {
         let mut valid_positions = Vec::new();
 
         for (system_name, system_data) in &self.systems {
-            if let (Some(lat), Some(lon), Some(hdop)) = (system_data.latitude, system_data.longitude, system_data.hdop) {
-                if system_data.satellites_info.len() >= 4 { // Minimum satellites for 3D fix
+            if let (Some(lat), Some(lon), Some(hdop)) = (system_data.latitude, system_data.longitude, system_data.hdop)
+                && system_data.satellites_info.len() >= 4 { // Minimum satellites for 3D fix
                     let altitude = system_data.altitude.unwrap_or(0.0);
                     let vdop = system_data.vdop.unwrap_or(hdop * 1.5); // Default VDOP if not available
                     let system_accuracy = system_data.accuracy;
                     valid_positions.push((system_name.to_string(), lat, lon, altitude, hdop, vdop, system_accuracy));
                 }
-            }
         }
 
         if valid_positions.is_empty() {
@@ -467,14 +465,13 @@ impl GnssData {
 
         for (system_name, system_data) in &self.systems {
             if let (Some(lat), Some(lon), Some(hdop), Some(pdop)) =
-                (system_data.latitude, system_data.longitude, system_data.hdop, system_data.pdop) {
-                if system_data.satellites_info.len() >= 4 {
+                (system_data.latitude, system_data.longitude, system_data.hdop, system_data.pdop)
+                && system_data.satellites_info.len() >= 4 {
                     let altitude = system_data.altitude.unwrap_or(0.0);
                     let vdop = system_data.vdop.unwrap_or(pdop * 0.8); // Default VDOP if not available
                     let system_accuracy = system_data.accuracy;
                     valid_positions.push((system_name.to_string(), lat, lon, altitude, hdop, pdop, vdop, system_accuracy));
                 }
-            }
         }
 
         if valid_positions.is_empty() {
@@ -569,7 +566,8 @@ impl GnssData {
     /// ```
     /// use nema_parser::gnss_multignss_parser::GnssData;
     /// let gnss = GnssData::new();
-    /// assert_eq!(gnss.get_fused_accuracy(), 2.5);
+    /// // The fused accuracy is calculated using RSS formula from system accuracies
+    /// assert!((gnss.get_fused_accuracy() - 1.37).abs() < 0.01);
     /// ```
     pub fn get_fused_accuracy(&self) -> f64 {
         self.fused_accuracy
@@ -1043,9 +1041,15 @@ mod tests {
     #[test]
     fn test_default_accuracy_values() {
         let gnss = GnssData::new();
+        
+        // Calculate expected fused accuracy using RSS formula
+        let expected_fused_accuracy = 1_f64/(((1_f64/2.0_f64.powi(2)) +
+                                              (1_f64/4.0_f64.powi(2)) +
+                                              (1_f64/3.0_f64.powi(2)) +
+                                              (1_f64/3.0_f64.powi(2))).sqrt());
 
-        // Test default fused accuracy
-        assert_eq!(gnss.get_fused_accuracy(), 2.5);
+        // Test calculated fused accuracy (approximately 1.37)
+        assert!((gnss.get_fused_accuracy() - expected_fused_accuracy).abs() < 0.01);
 
         // Test default system accuracies
         assert_eq!(gnss.get_system_accuracy("GPS"), Some(2.0));
@@ -1059,8 +1063,14 @@ mod tests {
     fn test_accuracy_getters_and_setters() {
         let mut gnss = GnssData::new();
 
-        // Test fused accuracy getter and setter
-        assert_eq!(gnss.get_fused_accuracy(), 2.5);
+        // Calculate expected fused accuracy using RSS formula
+        let expected_fused_accuracy = 1_f64/(((1_f64/2.0_f64.powi(2)) +
+                                              (1_f64/4.0_f64.powi(2)) +
+                                              (1_f64/3.0_f64.powi(2)) +
+                                              (1_f64/3.0_f64.powi(2))).sqrt());
+
+        // Test fused accuracy getter with calculated value (approximately 1.37)
+        assert!((gnss.get_fused_accuracy() - expected_fused_accuracy).abs() < 0.01);
         gnss.set_fused_accuracy(3.0);
         assert_eq!(gnss.get_fused_accuracy(), 3.0);
 
