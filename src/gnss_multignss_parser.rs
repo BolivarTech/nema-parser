@@ -566,11 +566,33 @@ impl GnssData {
     /// ```
     /// use nema_parser::gnss_multignss_parser::GnssData;
     /// let gnss = GnssData::new();
-    /// // The fused accuracy is calculated using RSS formula from system accuracies
+    /// // The fused accuracy is calculated using RSS formula from active system accuracies
     /// assert!((gnss.get_fused_accuracy() - 1.37).abs() < 0.01);
     /// ```
     pub fn get_fused_accuracy(&self) -> f64 {
-        self.fused_accuracy
+        // Calculate fused accuracy dynamically based only on systems with satellites and position data
+        let mut active_systems = Vec::new();
+
+        for (_system_name, system_data) in &self.systems {
+            // Check if system has satellites and position data
+            if !system_data.satellites_info.is_empty() &&
+               system_data.latitude.is_some() &&
+               system_data.longitude.is_some() {
+                active_systems.push(system_data.accuracy);
+            }
+        }
+
+        // If no active systems, return the default fused accuracy
+        if active_systems.is_empty() {
+            return self.fused_accuracy;
+        }
+
+        // Calculate RSS (Root Sum of Squares) for active systems only
+        let sum_of_inverse_squares: f64 = active_systems.iter()
+            .map(|accuracy| 1.0 / accuracy.powi(2))
+            .sum();
+
+        1.0 / sum_of_inverse_squares.sqrt()
     }
 
     /// Sets the fused data accuracy in meters.
