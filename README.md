@@ -75,14 +75,6 @@ cargo build
 cargo test
 ```
 
-## Benchmarks
-
-Run benchmarks to measure performance:
-
-```sh
-cargo bench
-```
-
 ## Documentation
 
 Generate and view the documentation locally:

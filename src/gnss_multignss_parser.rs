@@ -1,48 +1,108 @@
+//! GNSS Multi-System NMEA Parser
+//!
+//! This module provides data structures and logic for parsing NMEA sentences from multiple GNSS systems
+//! (GPS, GLONASS, GALILEO, BEIDOU). It supports extracting satellite information, position, DOP values,
+//! and fusing positions from different systems for improved accuracy.
+//!
+//! # Features
+//! - Parses GGA, RMC, VTG, GSA, GSV, and GLL sentences for supported systems
+//! - Tracks satellite info and usage per system
+//! - Calculates fused position using weighted averaging and advanced filtering
+//! - Provides utility functions for latitude/longitude parsing
+//!
+//! # Usage
+//!
+//! ```rust
+//! use crate::gnss_multignss_parser::GnssData;
+//! let mut gnss = GnssData::new();
+//! gnss.feed_nmea("$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
+//! gnss.calculate_fused_position();
+//! if let Some(fused) = &gnss.fused_position {
+//!     println!("Fused position: {}, {}", fused.latitude, fused.longitude);
+//! }
+//! ```
+
 use std::collections::HashMap;
 
+/// Information about a single satellite, including PRN, elevation, azimuth, and SNR.
 #[derive(Debug, Default, Clone)]
 pub struct SatelliteInfo {
+    /// Pseudo-Random Noise number (satellite identifier)
     pub prn: u16,
+    /// Elevation angle in degrees
     pub elevation: Option<u8>,
+    /// Azimuth angle in degrees
     pub azimuth: Option<u16>,
+    /// Signal-to-noise ratio in dBHz
     pub snr: Option<u8>,
 }
 
+/// Data for a single GNSS system (GPS, GLONASS, GALILEO, BEIDOU).
 #[derive(Debug, Default, Clone)]
 pub struct GnssSystemData {
+    /// List of satellites used for position fix
     pub satellites_used: Vec<u16>,
+    /// Information about all tracked satellites
     pub satellites_info: HashMap<u16, SatelliteInfo>,
+    /// Position Dilution of Precision
     pub pdop: Option<f64>,
+    /// Horizontal Dilution of Precision
     pub hdop: Option<f64>,
+    /// Vertical Dilution of Precision
     pub vdop: Option<f64>,
+    /// Latitude in decimal degrees
     pub latitude: Option<f64>,
+    /// Longitude in decimal degrees
     pub longitude: Option<f64>,
 }
 
+/// Main GNSS data structure holding parsed information and fused position.
 #[derive(Debug, Default, Clone)]
 pub struct GnssData {
+    /// UTC time from NMEA sentence
     pub time: Option<String>,
+    /// Latitude in decimal degrees
     pub latitude: Option<f64>,
+    /// Longitude in decimal degrees
     pub longitude: Option<f64>,
+    /// Fix quality indicator
     pub fix_quality: Option<u8>,
+    /// Number of satellites used for fix
     pub num_satellites: Option<u8>,
+    /// Altitude above mean sea level in meters
     pub altitude: Option<f64>,
+    /// Speed over ground in knots
     pub speed_knots: Option<f64>,
+    /// Track angle in degrees
     pub track_angle: Option<f64>,
+    /// Date in DDMMYY format
     pub date: Option<String>,
-    pub systems: HashMap<&'static str, GnssSystemData>, // "GPS", "GLONASS", "GALILEO", "BEIDOU"
+    /// Data for each GNSS system
+    pub systems: HashMap<&'static str, GnssSystemData>,
+    /// Fused position calculated from available systems
     pub fused_position: Option<FusedPosition>,
 }
 
+/// Fused position result from multiple GNSS systems.
 #[derive(Debug, Clone)]
 pub struct FusedPosition {
+    /// Fused latitude in decimal degrees
     pub latitude: f64,
+    /// Fused longitude in decimal degrees
     pub longitude: f64,
-    pub estimated_accuracy: f64, // in meters
+    /// Estimated accuracy in meters
+    pub estimated_accuracy: f64,
+    /// List of contributing GNSS systems
     pub contributing_systems: Vec<String>,
 }
 
 impl GnssData {
+    /// Creates a new `GnssData` instance with all supported GNSS systems initialized.
+    ///
+    /// # Example
+    /// ```
+    /// let gnss = GnssData::new();
+    /// ```
     pub fn new() -> Self {
         let mut systems = HashMap::new();
         systems.insert("GPS", GnssSystemData::default());
@@ -52,6 +112,7 @@ impl GnssData {
         Self { systems, ..Default::default() }
     }
 
+    /// Parses and updates GNSS data from a GGA sentence.
     fn update_gga(&mut self, parts: &[&str]) {
         let lat = parse_lat(parts.get(2), parts.get(3));
         let lon = parse_lon(parts.get(4), parts.get(5));
@@ -74,6 +135,7 @@ impl GnssData {
         }
     }
 
+    /// Parses and updates GNSS data from an RMC sentence.
     fn update_rmc(&mut self, parts: &[&str]) {
         let lat = parse_lat(parts.get(3), parts.get(4));
         let lon = parse_lon(parts.get(5), parts.get(6));
@@ -96,10 +158,12 @@ impl GnssData {
         }
     }
 
+    /// Parses and updates GNSS data from a VTG sentence.
     fn update_vtg(&mut self, parts: &[&str]) {
         self.speed_knots = parts.get(5).and_then(|s| s.parse().ok());
     }
 
+    /// Parses and updates GNSS system data from a GSA sentence.
     fn update_gsa(&mut self, parts: &[&str]) {
         let mut gps_ids = Vec::new();
         for i in 3..=14 {
@@ -168,6 +232,7 @@ impl GnssData {
         }
     }
 
+    /// Parses and updates satellite information from a GSV sentence for the specified system.
     fn update_gsv(&mut self, parts: &[&str], system: &str) {
         if let Some(sys_data) = self.systems.get_mut(system) {
             let mut i = 4;
@@ -191,6 +256,7 @@ impl GnssData {
         }
     }
 
+    /// Parses and updates latitude/longitude from a GLL sentence for the specified system.
     fn update_gll(&mut self, parts: &[&str], system: &str) {
         let lat = parse_lat(parts.get(1), parts.get(2));
         let lon = parse_lon(parts.get(3), parts.get(4));
@@ -207,6 +273,15 @@ impl GnssData {
         }
     }
 
+    /// Feeds a single NMEA sentence to the parser and updates internal state.
+    ///
+    /// # Arguments
+    /// * `sentence` - A string slice containing the NMEA sentence.
+    ///
+    /// # Example
+    /// ```
+    /// gnss.feed_nmea("$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
+    /// ```
     pub fn feed_nmea(&mut self, sentence: &str) {
         let sentence = sentence.trim_start_matches('$');
         let parts: Vec<&str> = sentence.split(',').collect();
@@ -227,6 +302,17 @@ impl GnssData {
         }
     }
 
+    /// Calculates a fused position from all available GNSS systems using weighted averaging.
+    ///
+    /// The fused position is stored in `self.fused_position`.
+    ///
+    /// # Example
+    /// ```
+    /// gnss.calculate_fused_position();
+    /// if let Some(fused) = &gnss.fused_position {
+    ///     println!("Fused position: {}, {}", fused.latitude, fused.longitude);
+    /// }
+    /// ```
     pub fn calculate_fused_position(&mut self) {
         let mut valid_positions = Vec::new();
 
@@ -291,6 +377,9 @@ impl GnssData {
         }
     }
 
+    /// Calculates an advanced fused position using a Kalman-like filtering approach.
+    ///
+    /// The fused position is stored in `self.fused_position`.
     pub fn calculate_advanced_fused_position(&mut self) {
         let mut valid_positions = Vec::new();
 
@@ -353,6 +442,14 @@ impl GnssData {
     }
 }
 
+/// Parses latitude from NMEA format to decimal degrees.
+///
+/// # Arguments
+/// * `value` - Latitude value as string (DDMM.MMMM)
+/// * `hemi` - Hemisphere ("N" or "S")
+///
+/// # Returns
+/// * `Option<f64>` - Latitude in decimal degrees
 fn parse_lat(value: Option<&&str>, hemi: Option<&&str>) -> Option<f64> {
     let val = value?.parse::<f64>().ok()?;
     let deg = (val / 100.0).floor();
@@ -362,6 +459,14 @@ fn parse_lat(value: Option<&&str>, hemi: Option<&&str>) -> Option<f64> {
     Some(result)
 }
 
+/// Parses longitude from NMEA format to decimal degrees.
+///
+/// # Arguments
+/// * `value` - Longitude value as string (DDDMM.MMMM)
+/// * `hemi` - Hemisphere ("E" or "W")
+///
+/// # Returns
+/// * `Option<f64>` - Longitude in decimal degrees
 fn parse_lon(value: Option<&&str>, hemi: Option<&&str>) -> Option<f64> {
     let val = value?.parse::<f64>().ok()?;
     let deg = (val / 100.0).floor();
