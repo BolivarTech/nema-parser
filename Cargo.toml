@@ -6,6 +6,9 @@ authors = ["Julian Bolivar"]
 description = "A parser for NEMA sentences"
 license = "MIT"
 repository = "https://github.com/BolivarTech/nema-parser"
+readme = "README.md"
+license-file = "LICENSE.md"
+keywords = ["parser", "nema", "gps", "glonass", "galileo"]
 
 
 [dependencies]
