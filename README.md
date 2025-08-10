@@ -106,7 +106,7 @@ Pull requests are welcome\. For major changes, please open an issue first to dis
 
 ## License
 
-Distributed under the MIT License\. See `LICENSE` for more information\.
+Distributed under the MIT License\. See [LICENSE](LICENSE.md) for more information\.
 
 ## Acknowledgments
 
