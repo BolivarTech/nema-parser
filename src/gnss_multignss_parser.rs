@@ -4,6 +4,11 @@
 //! (GPS, GLONASS, GALILEO, BEIDOU). It supports extracting satellite information, position, DOP values,
 //! and fusing positions from different systems for improved accuracy.
 //!
+//! # Altitude Reference
+//!
+//! All altitude values (e.g., `altitude` fields in structs and fused position) are **above mean sea level** (MSL),
+//! as reported by NMEA GGA sentences.
+//!
 //! # Features
 //! - Parses GGA, RMC, VTG, GSA, GSV, and GLL sentences for supported systems
 //! - Tracks satellite info and usage per system
@@ -19,6 +24,7 @@
 //! gnss.calculate_fused_position();
 //! if let Some(fused) = &gnss.fused_position {
 //!     println!("Fused position: {}, {}", fused.latitude, fused.longitude);
+//!     println!("Altitude above mean sea level: {}", fused.altitude);
 //! }
 //! ```
 
