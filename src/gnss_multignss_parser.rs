@@ -119,23 +119,19 @@ impl GnssData {
         let mut systems = HashMap::new();
 
         // Initialize GPS with 2.0m accuracy
-        let mut gps_system = GnssSystemData::default();
-        gps_system.accuracy = 2.0;
+        let gps_system = GnssSystemData { accuracy: 2.0, ..Default::default() };
         systems.insert("GPS", gps_system);
 
         // Initialize GLONASS with 4.0m accuracy
-        let mut glonass_system = GnssSystemData::default();
-        glonass_system.accuracy = 4.0;
+        let glonass_system = GnssSystemData { accuracy: 4.0, ..Default::default() };
         systems.insert("GLONASS", glonass_system);
 
         // Initialize GALILEO with 3.0m accuracy
-        let mut galileo_system = GnssSystemData::default();
-        galileo_system.accuracy = 3.0;
+        let galileo_system = GnssSystemData { accuracy: 3.0, ..Default::default() };
         systems.insert("GALILEO", galileo_system);
 
         // Initialize BEIDOU with 3.0m accuracy
-        let mut beidou_system = GnssSystemData::default();
-        beidou_system.accuracy = 3.0;
+        let beidou_system = GnssSystemData { accuracy: 3.0, ..Default::default() };
         systems.insert("BEIDOU", beidou_system);
 
         let sys_fuss_acc =  1_f64/(((1_f64/systems.get("GPS").unwrap().accuracy.powi(2)) +
