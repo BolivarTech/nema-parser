@@ -2,6 +2,11 @@
 name = "nema-parser"
 version = "0.1.0"
 edition = "2024"
+authors = ["Julian Bolivar"]
+description = "A parser for NEMA sentences"
+license = "MIT"
+repository = "https://github.com/BolivarTech/nema-parser"
+
 
 [dependencies]
 serialport = "4.0"
