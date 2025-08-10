@@ -10,11 +10,6 @@ The binary reads NMEA sentences from a serial port, parses them using the GNSS m
 and prints individual GNSS system data as well as a fused position estimate.  
 
 
-```markdown
-# nema-parser
-
-A Rust library for parsing NMEA sentences, commonly used in GPS and marine navigation systems.
-
 ## Features
 
 - Fast and efficient NMEA sentence parsing
