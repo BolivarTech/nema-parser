@@ -1,4 +1,14 @@
-Here is a filled-out `README.md` for your Rust NMEA parser project. It includes sections for features, installation, usage, examples, building, testing, benchmarks, documentation, contributing, roadmap, license, and acknowledgments.
+# GNSS Multi-System NMEA Parser
+
+The module provides data structures and logic for parsing NMEA sentences from multiple GNSS systems
+(GPS, GLONASS, GALILEO, BEIDOU). It supports extracting satellite information, position, DOP values,
+and fusing positions from different systems for improved accuracy.  
+
+# GNSS Multi-System NMEA Parser Example
+
+The binary reads NMEA sentences from a serial port, parses them using the GNSS multi-system parser,
+and prints individual GNSS system data as well as a fused position estimate.  
+
 
 ```markdown
 # nema-parser
