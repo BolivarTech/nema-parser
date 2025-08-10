@@ -13,7 +13,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use crate::gnss_multignss_parser::GnssData;
+//! use nema_parser::gnss_multignss_parser::GnssData;
 //! let mut gnss = GnssData::new();
 //! gnss.feed_nmea("$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
 //! gnss.calculate_fused_position();
@@ -101,6 +101,8 @@ impl GnssData {
     ///
     /// # Example
     /// ```
+    /// use nema_parser::gnss_multignss_parser::GnssData;
+    ///
     /// let gnss = GnssData::new();
     /// ```
     pub fn new() -> Self {
@@ -280,6 +282,8 @@ impl GnssData {
     ///
     /// # Example
     /// ```
+    /// use nema_parser::gnss_multignss_parser::GnssData;
+    /// let mut gnss = GnssData::new();
     /// gnss.feed_nmea("$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
     /// ```
     pub fn feed_nmea(&mut self, sentence: &str) {
@@ -308,6 +312,8 @@ impl GnssData {
     ///
     /// # Example
     /// ```
+    /// use nema_parser::gnss_multignss_parser::GnssData;
+    /// let mut gnss = GnssData::new();
     /// gnss.calculate_fused_position();
     /// if let Some(fused) = &gnss.fused_position {
     ///     println!("Fused position: {}, {}", fused.latitude, fused.longitude);
