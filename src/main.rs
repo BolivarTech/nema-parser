@@ -59,19 +59,38 @@ fn main() {
                             let sat_count = sys_data.satellites_info.len();
                             println!("System: {} | Satellites: {}", system, sat_count);
                             if let (Some(lat), Some(lon)) = (sys_data.latitude, sys_data.longitude) {
-                                println!("System: {} | Lat: {:.6}, Lon: {:.6}", system, lat, lon);
+                                print!("System: {} | Lat: {:.6}, Lon: {:.6}", system, lat, lon);
+                                if let Some(alt) = sys_data.altitude {
+                                    print!(" | Alt: {:.1}m", alt);
+                                }
+                                println!();
                             } else {
                                 println!("System: {} | Coordinates not available", system);
                             }
                             if let Some(hdop) = sys_data.hdop {
-                                println!("System: {} | HDOP: {:.2}", system, hdop);
+                                print!("System: {} | HDOP: {:.2}", system, hdop);
+                                if let Some(vdop) = sys_data.vdop {
+                                    print!(" | VDOP: {:.2}", vdop);
+                                }
+                                if let Some(pdop) = sys_data.pdop {
+                                    print!(" | PDOP: {:.2}", pdop);
+                                }
+                                let acc = sys_data.accuracy;
+                                print!(" | Sys. Acc: {:.2}m", acc);
+                                println!();
                             }
                         }
 
-                        // Print fused position.
+                        // Print comprehensive fused position data.
                         if let Some(fused) = &gnss.fused_position {
-                            println!("FUSED | Lat: {:.6}, Lon: {:.6} | Accuracy: {:.1}m | Systems: {:?}",
-                                fused.latitude, fused.longitude, fused.estimated_accuracy, fused.contributing_systems);
+                            println!("┌─ FUSED POSITION DATA ─────────────────────────────────────────┐");
+                            println!("│ Latitude:         {:.7}°", fused.latitude);
+                            println!("│ Longitude:        {:.7}°", fused.longitude);
+                            println!("│ Altitude:         {:.2} m", fused.altitude);
+                            println!("│ Horizontal Acc:   {:.2} m", fused.estimated_accuracy);
+                            println!("│ Altitude Acc:     {:.2} m", fused.altitude_accuracy);
+                            println!("│ Contributing:     {:?}", fused.contributing_systems);
+                            println!("└───────────────────────────────────────────────────────────────┘");
                         } else {
                             println!("FUSED | Position not available");
                         }
