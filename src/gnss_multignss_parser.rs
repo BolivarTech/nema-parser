@@ -62,9 +62,12 @@ pub struct GnssSystemData {
     pub longitude: Option<f64>,
     /// Altitude above mean sea level in meters
     pub altitude: Option<f64>,
-    /// Module accuracy in meters
+    /// Fixed accuracy in meters (best-case for this system)
+    pub fixed_accuracy: f64,
+    /// Module accuracy in meters (dynamically updated)
     pub accuracy: f64,
 }
+
 
 /// Main GNSS data structure holding parsed information and fused position.
 #[derive(Debug, Default, Clone)]
@@ -91,8 +94,6 @@ pub struct GnssData {
     pub systems: HashMap<&'static str, GnssSystemData>,
     /// Fused position calculated from available systems
     pub fused_position: Option<FusedPosition>,
-    /// Fused data accuracy in meters
-    pub fused_accuracy: f64,
 }
 
 /// Fused position result from multiple GNSS systems.
@@ -124,29 +125,24 @@ impl GnssData {
     pub fn new() -> Self {
         let mut systems = HashMap::new();
 
-        // Initialize GPS with 2.0m accuracy
-        let gps_system = GnssSystemData { accuracy: 2.0, ..Default::default() };
+        // Initialize GPS with 2.0m fixed accuracy
+        let gps_system = GnssSystemData { fixed_accuracy: 2.0, accuracy: 2.0, ..Default::default() };
         systems.insert("GPS", gps_system);
 
-        // Initialize GLONASS with 4.0m accuracy
-        let glonass_system = GnssSystemData { accuracy: 4.0, ..Default::default() };
+        // Initialize GLONASS with 4.0m fixed accuracy
+        let glonass_system = GnssSystemData { fixed_accuracy: 4.0, accuracy: 4.0, ..Default::default() };
         systems.insert("GLONASS", glonass_system);
 
-        // Initialize GALILEO with 3.0m accuracy
-        let galileo_system = GnssSystemData { accuracy: 3.0, ..Default::default() };
+        // Initialize GALILEO with 3.0m fixed accuracy
+        let galileo_system = GnssSystemData { fixed_accuracy: 3.0, accuracy: 3.0, ..Default::default() };
         systems.insert("GALILEO", galileo_system);
 
-        // Initialize BEIDOU with 3.0m accuracy
-        let beidou_system = GnssSystemData { accuracy: 3.0, ..Default::default() };
+        // Initialize BEIDOU with 3.0m fixed accuracy
+        let beidou_system = GnssSystemData { fixed_accuracy: 3.0, accuracy: 3.0, ..Default::default() };
         systems.insert("BEIDOU", beidou_system);
 
-        let sys_fuss_acc =  1_f64/(((1_f64/systems.get("GPS").unwrap().accuracy.powi(2)) +
-                                    (1_f64/systems.get("GLONASS").unwrap().accuracy.powi(2)) +
-                                    (1_f64/systems.get("GALILEO").unwrap().accuracy.powi(2)) +
-                                    (1_f64/systems.get("BEIDOU").unwrap().accuracy.powi(2))).sqrt());
         Self {
             systems,
-            fused_accuracy: sys_fuss_acc, // Default fused accuracy
             ..Default::default()
         }
     }
@@ -220,13 +216,14 @@ impl GnssData {
         for i in 15..parts.len() {
             if let Some(part) = parts.get(i) {
                 let clean_part = part.split('*').next().unwrap_or(part);
-                if !clean_part.is_empty()
-                    && let Ok(value) = clean_part.parse::<f64>() {
+                if !clean_part.is_empty() {
+                    if let Ok(value) = clean_part.parse::<f64>() {
                         dop_values.push(value);
                         if dop_values.len() == 3 {
                             break;
                         }
                     }
+                }
             }
         }
 
@@ -270,6 +267,12 @@ impl GnssData {
                 sys.pdop = pdop;
                 sys.hdop = hdop;
                 sys.vdop = vdop;
+                // Dynamically update accuracy using HDOP and fixed_accuracy
+                if let Some(hdop_val) = hdop {
+                    sys.accuracy = hdop_val * sys.fixed_accuracy;
+                } else {
+                    sys.accuracy = sys.fixed_accuracy;
+                }
             }
         }
     }
@@ -363,13 +366,14 @@ impl GnssData {
         let mut valid_positions = Vec::new();
 
         for (system_name, system_data) in &self.systems {
-            if let (Some(lat), Some(lon), Some(hdop)) = (system_data.latitude, system_data.longitude, system_data.hdop)
-                && system_data.satellites_info.len() >= 4 { // Minimum satellites for 3D fix
+            if system_data.satellites_info.len() >= 4 {
+                if let (Some(lat), Some(lon), Some(hdop)) = (system_data.latitude, system_data.longitude, system_data.hdop) {
                     let altitude = system_data.altitude.unwrap_or(0.0);
                     let vdop = system_data.vdop.unwrap_or(hdop * 1.5); // Default VDOP if not available
                     let system_accuracy = system_data.accuracy;
                     valid_positions.push((system_name.to_string(), lat, lon, altitude, hdop, vdop, system_accuracy));
                 }
+            }
         }
 
         if valid_positions.is_empty() {
@@ -426,6 +430,8 @@ impl GnssData {
             // Calculate fused accuracy based on weighted system accuracies and DOP values
             let mut weighted_horizontal_accuracy = 0.0;
             let mut weighted_vertical_accuracy = 0.0;
+            let mut total_weight = 0.0;
+            let mut total_alt_weight = 0.0;
 
             for (_, _, _, _, hdop, vdop, system_accuracy) in &valid_positions {
                 // Use system accuracy as multiplier instead of hardcoded 2.0
@@ -437,11 +443,18 @@ impl GnssData {
 
                 weighted_horizontal_accuracy += combined_horizontal_accuracy * weight;
                 weighted_vertical_accuracy += combined_vertical_accuracy * alt_weight;
+                total_weight += weight;
+                total_alt_weight += alt_weight;
             }
 
-            let final_horizontal_accuracy = (weighted_horizontal_accuracy / total_weight).max(self.fused_accuracy);
+            let final_horizontal_accuracy = if total_weight > 0.0 {
+                (weighted_horizontal_accuracy / total_weight).max(self.get_fused_accuracy())
+            } else {
+                self.get_fused_accuracy()
+            };
             let final_vertical_accuracy = if total_alt_weight > 0.0 {
-                (weighted_vertical_accuracy / total_alt_weight).max(self.fused_accuracy * 1.5)
+                (weighted_vertical_accuracy / total_alt_weight)
+                    .max(self.get_fused_accuracy() * 1.5)
             } else {
                 final_horizontal_accuracy * 1.5
             };
@@ -466,14 +479,12 @@ impl GnssData {
         let mut valid_positions = Vec::new();
 
         for (system_name, system_data) in &self.systems {
-            if let (Some(lat), Some(lon), Some(hdop), Some(pdop)) =
-                (system_data.latitude, system_data.longitude, system_data.hdop, system_data.pdop)
-                && system_data.satellites_info.len() >= 4 {
-                    let altitude = system_data.altitude.unwrap_or(0.0);
-                    let vdop = system_data.vdop.unwrap_or(pdop * 0.8); // Default VDOP if not available
-                    let system_accuracy = system_data.accuracy;
-                    valid_positions.push((system_name.to_string(), lat, lon, altitude, hdop, pdop, vdop, system_accuracy));
-                }
+            if let (Some(lat), Some(lon), Some(hdop), Some(pdop)) = (system_data.latitude, system_data.longitude, system_data.hdop, system_data.pdop) {
+                let altitude = system_data.altitude.unwrap_or(0.0);
+                let vdop = system_data.vdop.unwrap_or(pdop * 0.8); // Default VDOP if not available
+                let system_accuracy = system_data.accuracy;
+                valid_positions.push((system_name.to_string(), lat, lon, altitude, hdop, pdop, vdop, system_accuracy));
+            }
         }
 
         if valid_positions.is_empty() {
@@ -524,7 +535,7 @@ impl GnssData {
                 })
                 .sum::<f64>() / total_weight;
 
-            let estimated_accuracy = (variance.sqrt() * 111000.0).max(self.fused_accuracy); // Convert to meters and apply minimum
+            let estimated_accuracy = (variance.sqrt() * 111000.0).max(self.get_fused_accuracy()); // Convert to meters and apply minimum
 
             // Calculate altitude variance and accuracy using system accuracies
             let alt_variance: f64 = if total_alt_weight > 0.0 {
@@ -541,16 +552,16 @@ impl GnssData {
             };
 
             let altitude_accuracy = if alt_variance > 0.0 {
-                alt_variance.sqrt().max(self.fused_accuracy * 1.5) // Minimum based on fused accuracy
+                alt_variance.sqrt().max(self.get_fused_accuracy() * 1.5) // Minimum based on fused accuracy
             } else {
-                (estimated_accuracy * 1.5).max(self.fused_accuracy * 1.5) // Default to 1.5x horizontal accuracy
+                (estimated_accuracy * 1.5).max(self.get_fused_accuracy() * 1.5) // Default to 1.5x horizontal accuracy
             };
 
             self.fused_position = Some(FusedPosition {
                 latitude: fused_lat,
                 longitude: fused_lon,
                 altitude: fused_alt,
-                estimated_accuracy: estimated_accuracy.max(self.fused_accuracy), // Apply minimum fused accuracy
+                estimated_accuracy: estimated_accuracy.max(self.get_fused_accuracy()), // Apply minimum fused accuracy
                 altitude_accuracy,
                 contributing_systems,
             });
@@ -572,28 +583,24 @@ impl GnssData {
     /// assert!((gnss.get_fused_accuracy() - 1.37).abs() < 0.01);
     /// ```
     pub fn get_fused_accuracy(&self) -> f64 {
-        // Calculate fused accuracy dynamically based only on systems with satellites and position data
         let mut active_systems = Vec::new();
-
         for system_data in self.systems.values() {
-            // Check if system has satellites and position data
             if !system_data.satellites_info.is_empty() &&
                system_data.latitude.is_some() &&
                system_data.longitude.is_some() {
                 active_systems.push(system_data.accuracy);
             }
         }
-
-        // If no active systems, return the default fused accuracy
         if active_systems.is_empty() {
-            return self.fused_accuracy;
+            // If no active systems, use all system dynamic accuracies
+            active_systems = self.systems.values().map(|sys| sys.accuracy).collect();
         }
-
-        // Calculate RSS (Root Sum of Squares) for active systems only
         let sum_of_inverse_squares: f64 = active_systems.iter()
             .map(|accuracy| 1.0 / accuracy.powi(2))
             .sum();
-
+        if sum_of_inverse_squares == 0.0 {
+            return 0.0;
+        }
         1.0 / sum_of_inverse_squares.sqrt()
     }
 
@@ -607,13 +614,15 @@ impl GnssData {
     /// use nema_parser::gnss_multignss_parser::GnssData;
     /// let mut gnss = GnssData::new();
     /// gnss.set_fused_accuracy(3.0);
-    /// assert_eq!(gnss.get_fused_accuracy(), 3.0);
+    /// // Fused accuracy is always dynamically calculated, not set by this function
+    /// let fused_accuracy = gnss.get_fused_accuracy();
+    /// assert!((fused_accuracy - 1.3675).abs() < 0.01);
     /// ```
-    pub fn set_fused_accuracy(&mut self, accuracy: f64) {
-        self.fused_accuracy = accuracy;
+    pub fn set_fused_accuracy(&mut self, _accuracy: f64) {
+        // No-op: fused accuracy is now always dynamic
     }
 
-    /// Gets the accuracy for a specific GNSS system in meters.
+    /// Gets the dynamic accuracy for a specific GNSS system in meters.
     ///
     /// # Arguments
     /// * `system` - The GNSS system name ("GPS", "GLONASS", "GALILEO", "BEIDOU")
@@ -632,6 +641,25 @@ impl GnssData {
         self.systems.get(system).map(|sys| sys.accuracy)
     }
 
+    /// Gets the fixed accuracy for a specific GNSS system in meters.
+    ///
+    /// # Arguments
+    /// * `system` - The GNSS system name ("GPS", "GLONASS", "GALILEO", "BEIDOU")
+    ///
+    /// # Returns
+    /// * `Option<f64>` - The fixed accuracy value in meters, or None if the system doesn't exist
+    ///
+    /// # Example
+    /// ```
+    /// use nema_parser::gnss_multignss_parser::GnssData;
+    /// let gnss = GnssData::new();
+    /// assert_eq!(gnss.get_system_fixed_accuracy("GPS"), Some(2.0));
+    /// assert_eq!(gnss.get_system_fixed_accuracy("GLONASS"), Some(4.0));
+    /// ```
+    pub fn get_system_fixed_accuracy(&self, system: &str) -> Option<f64> {
+        self.systems.get(system).map(|sys| sys.fixed_accuracy)
+    }
+
     /// Sets the accuracy for a specific GNSS system in meters.
     ///
     /// # Arguments
@@ -645,13 +673,13 @@ impl GnssData {
     /// ```
     /// use nema_parser::gnss_multignss_parser::GnssData;
     /// let mut gnss = GnssData::new();
-    /// assert!(gnss.set_system_accuracy("GPS", 1.5));
-    /// assert_eq!(gnss.get_system_accuracy("GPS"), Some(1.5));
-    /// assert!(!gnss.set_system_accuracy("INVALID", 1.0));
+    /// assert!(gnss.set_system_fixed_accuracy("GPS", 1.5));
+    /// assert_eq!(gnss.get_system_fixed_accuracy("GPS"), Some(1.5));
+    /// assert!(!gnss.set_system_fixed_accuracy("INVALID", 1.0));
     /// ```
-    pub fn set_system_accuracy(&mut self, system: &str, accuracy: f64) -> bool {
+    pub fn set_system_fixed_accuracy(&mut self, system: &str, accuracy: f64) -> bool {
         if let Some(sys) = self.systems.get_mut(system) {
-            sys.accuracy = accuracy;
+            sys.fixed_accuracy = accuracy;
             true
         } else {
             false
@@ -673,7 +701,7 @@ impl GnssData {
     /// ```
     pub fn get_all_system_accuracies(&self) -> HashMap<String, f64> {
         self.systems.iter()
-            .map(|(name, sys)| (name.to_string(), sys.accuracy))
+            .map(|(name, sys)| (name.to_string(), sys.fixed_accuracy))
             .collect()
     }
 }
@@ -1096,16 +1124,17 @@ mod tests {
         // Test fused accuracy getter with calculated value (approximately 1.37)
         assert!((gnss.get_fused_accuracy() - expected_fused_accuracy).abs() < 0.01);
         gnss.set_fused_accuracy(3.0);
-        assert_eq!(gnss.get_fused_accuracy(), 3.0);
+        // Fused accuracy is always dynamic, so check the value again
+        assert!((gnss.get_fused_accuracy() - expected_fused_accuracy).abs() < 0.01);
 
         // Test system accuracy getter and setter
-        assert_eq!(gnss.get_system_accuracy("GPS"), Some(2.0));
-        assert!(gnss.set_system_accuracy("GPS", 1.5));
-        assert_eq!(gnss.get_system_accuracy("GPS"), Some(1.5));
+        assert_eq!(gnss.get_system_fixed_accuracy("GPS"), Some(2.0));
+        assert!(gnss.set_system_fixed_accuracy("GPS", 1.5));
+        assert_eq!(gnss.get_system_fixed_accuracy("GPS"), Some(1.5));
 
         // Test setting accuracy for invalid system
-        assert!(!gnss.set_system_accuracy("INVALID", 1.0));
-        assert_eq!(gnss.get_system_accuracy("INVALID"), None);
+        assert!(!gnss.set_system_fixed_accuracy("INVALID", 1.0));
+        assert_eq!(gnss.get_system_fixed_accuracy("INVALID"), None);
     }
 
     #[test]
@@ -1121,8 +1150,8 @@ mod tests {
         assert_eq!(accuracies.get("BEIDOU"), Some(&3.0));
 
         // Test after modifying some accuracies
-        gnss.set_system_accuracy("GPS", 1.8);
-        gnss.set_system_accuracy("GALILEO", 2.5);
+        gnss.set_system_fixed_accuracy("GPS", 1.8);
+        gnss.set_system_fixed_accuracy("GALILEO", 2.5);
 
         let updated_accuracies = gnss.get_all_system_accuracies();
         assert_eq!(updated_accuracies.get("GPS"), Some(&1.8));
